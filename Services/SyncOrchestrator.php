@@ -17,7 +17,11 @@ final class SyncOrchestrator
     private AuditService $auditService;
     private AdminUserService $adminUserService;
     private RunStateService $runStateService;
+    private MailService $mailService;
     private Logger $logger;
+
+    /** @var array<int, array{jamaat_id: int, jamaat: string, jamiaat: string, old_its_id: string, new_its_id: string}> */
+    private array $aamilChanges = [];
 
     public function __construct(
         SoapService $soapService,
@@ -28,6 +32,7 @@ final class SyncOrchestrator
         AuditService $auditService,
         AdminUserService $adminUserService,
         RunStateService $runStateService,
+        MailService $mailService,
         Logger $logger
     ) {
         $this->soapService = $soapService;
@@ -38,6 +43,7 @@ final class SyncOrchestrator
         $this->auditService = $auditService;
         $this->adminUserService = $adminUserService;
         $this->runStateService = $runStateService;
+        $this->mailService = $mailService;
         $this->logger = $logger;
     }
 
@@ -101,6 +107,7 @@ final class SyncOrchestrator
             } else {
                 // Payload changed; do full diff and update
                 $this->syncJamaatData($runId, $normalizedRows, $rows);
+                $this->notifyAamilChanges($runId);
                 $this->runStateService->saveRunState($payloadHash, count($rows));
                 $this->logRunSummary($runId, $this->auditService->getEventCount($runId, 'jamaat_added'), $this->auditService->getEventCount($runId, 'jamaat_name_changed'), $this->auditService->getEventCount($runId, 'jamaat_deleted'), count($rows), $startTime);
             }
@@ -146,10 +153,14 @@ final class SyncOrchestrator
         // Upsert changed rows
         if (!empty($changedRows)) {
             $rowsToUpsert = [];
+            $oldRows = [];
             foreach ($normalizedRows as $row) {
                 if (isset($changedRows[$row['jamaat_id']])) {
                     $row['row_hash'] = $changedRows[$row['jamaat_id']];
                     $rowsToUpsert[] = $row;
+                    // Capture the pre-upsert master row; after the upsert it
+                    // already holds the new values and no diff would show.
+                    $oldRows[$row['jamaat_id']] = $this->databaseService->fetchMasterRow($row['jamaat_id'], 'core');
                 }
             }
 
@@ -172,7 +183,7 @@ final class SyncOrchestrator
 
             // Generate audit events for each changed row
             foreach ($changedRows as $jamaatId => $newHash) {
-                $this->auditChangeEvent($runId, $jamaatId, $normalizedRows);
+                $this->auditChangeEvent($runId, $jamaatId, $normalizedRows, $oldRows[$jamaatId] ?? null);
             }
         }
 
@@ -190,7 +201,7 @@ final class SyncOrchestrator
     /**
      * Audit a changed row by comparing old vs new.
      */
-    private function auditChangeEvent(string $runId, int $jamaatId, array $normalizedRows): void
+    private function auditChangeEvent(string $runId, int $jamaatId, array $normalizedRows, ?array $oldRow): void
     {
         $newRow = null;
         foreach ($normalizedRows as $row) {
@@ -203,9 +214,6 @@ final class SyncOrchestrator
         if (!$newRow) {
             return;
         }
-
-        // Fetch old row from master
-        $oldRow = $this->databaseService->fetchMasterRow($jamaatId, 'core');
 
         if (!$oldRow) {
             // New row
@@ -230,6 +238,14 @@ final class SyncOrchestrator
                 oldValue: (string)$oldRow['aamil_masool_its_id'],
                 newValue: (string)$newRow['aamil_masool_its_id']
             );
+
+            $this->aamilChanges[] = [
+                'jamaat_id' => $jamaatId,
+                'jamaat' => (string)$newRow['jamaat'],
+                'jamiaat' => (string)$newRow['jamiaat'],
+                'old_its_id' => (string)$oldRow['aamil_masool_its_id'],
+                'new_its_id' => (string)$newRow['aamil_masool_its_id'],
+            ];
         }
 
         if ($oldRow['jamaat'] !== $newRow['jamaat'] || $oldRow['jamaat_ar'] !== $newRow['jamaat_ar']) {
@@ -261,6 +277,25 @@ final class SyncOrchestrator
                 );
             }
         }
+    }
+
+    /**
+     * Email the aamil changes collected during this run (one email per run).
+     */
+    private function notifyAamilChanges(string $runId): void
+    {
+        if (empty($this->aamilChanges)) {
+            return;
+        }
+
+        $sent = $this->mailService->sendAamilChangeNotification($runId, $this->aamilChanges);
+        $this->auditService->writeEvent(
+            $runId,
+            $sent ? 'aamil_mail_sent' : 'aamil_mail_failed',
+            'jamaat_sync',
+            message: count($this->aamilChanges) . ' aamil change(s) ' . ($sent ? 'emailed' : 'not emailed, see log')
+        );
+        $this->aamilChanges = [];
     }
 
     /**
