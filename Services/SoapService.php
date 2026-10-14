@@ -10,11 +10,16 @@ final class SoapService
 {
     private string $soapUrl;
     private string $soapAction;
+    private ?string $outboundInterface;
 
-    public function __construct(string $soapUrl = Constants::SOAP_URL, string $soapAction = Constants::SOAP_ACTION)
-    {
+    public function __construct(
+        string $soapUrl = Constants::SOAP_URL,
+        string $soapAction = Constants::SOAP_ACTION,
+        ?string $outboundInterface = null
+    ) {
         $this->soapUrl = $soapUrl;
         $this->soapAction = $soapAction;
+        $this->outboundInterface = $outboundInterface ?: null;
     }
 
     /**
@@ -33,7 +38,9 @@ final class SoapService
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $soapBody);
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_INTERFACE, 'xxx.xxx.xxx.xxx');
+            if ($this->outboundInterface !== null) {
+                curl_setopt($ch, CURLOPT_INTERFACE, $this->outboundInterface);
+            }
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, Constants::SOAP_CONNECT_TIMEOUT);
             curl_setopt($ch, CURLOPT_TIMEOUT, Constants::SOAP_TIMEOUT);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);

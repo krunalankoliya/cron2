@@ -9,8 +9,13 @@ final class Logger
 
     public function __construct(string $logDir)
     {
+        $logDir = rtrim($logDir, '/');
+        if (!is_dir($logDir)) {
+            @mkdir($logDir, 0755, true);
+        }
+
         $date = date('Ymd');
-        $this->logFile = rtrim($logDir, '/') . "/outBound_{$date}.log";
+        $this->logFile = "{$logDir}/outBound_{$date}.log";
     }
 
     public function log(string $message): void
@@ -19,7 +24,12 @@ final class Logger
         if ($fh) {
             fwrite($fh, $message);
             fclose($fh);
+            return;
         }
+
+        // Never fail silently: fall back to PHP's own error log if the
+        // flat-file target is unwritable (missing dir, bad permissions).
+        error_log("[jamaat-cron] Failed to write {$this->logFile}: {$message}");
     }
 
     public function info(string $message): void

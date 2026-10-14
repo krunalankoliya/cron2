@@ -1,5 +1,5 @@
 <?php
-declare(strict_types=1);
+declare (strict_types = 1);
 
 namespace Jamaat\Cron\Services;
 
@@ -13,7 +13,7 @@ final class AuditService
     public function __construct(\mysqli $coreConnection, Logger $logger)
     {
         $this->coreConnection = $coreConnection;
-        $this->logger = $logger;
+        $this->logger         = $logger;
     }
 
     /**
@@ -36,24 +36,23 @@ final class AuditService
         $newValue = $this->sanitizeValue($newValue);
 
         $stmt = $this->coreConnection->prepare(
-            'INSERT INTO jamaat_sync_audit_log '
+            'INSERT INTO jamaat_sync_audit_logs '
             . '(run_id, event_type, entity_type, jamaat_id, jamiaat_id, field_name, old_value, new_value, message, created_at) '
             . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6))'
         );
 
-        if (!$stmt) {
+        if (! $stmt) {
             $this->logger->error("Failed to prepare audit insert: {$this->coreConnection->error}");
             $this->logEventFlat($runId, $eventType, $entityType, $jamaatId, $jamiaatId, $fieldName, $oldValue, $newValue, $message);
             return;
         }
 
         $stmt->bind_param(
-            'sssiiissss',
-            $runId, $eventType, $entityType, $jamaatId, $jamiaatId, $fieldName, $oldValue, $newValue, $message, $timestamp
+            'sssiissss',
+            $runId, $eventType, $entityType, $jamaatId, $jamiaatId, $fieldName, $oldValue, $newValue, $message
         );
-        $timestamp = null; // NOW(6) uses current time automatically
 
-        if (!$stmt->execute()) {
+        if (! $stmt->execute()) {
             $this->logger->error("Failed to insert audit event: {$stmt->error}");
             $this->logEventFlat($runId, $eventType, $entityType, $jamaatId, $jamiaatId, $fieldName, $oldValue, $newValue, $message);
         }
@@ -115,25 +114,25 @@ final class AuditService
     public function getEventCount(string $runId, string $eventType): int
     {
         $stmt = $this->coreConnection->prepare(
-            'SELECT COUNT(*) as cnt FROM jamaat_sync_audit_log WHERE run_id = ? AND event_type = ?'
+            'SELECT COUNT(*) as cnt FROM jamaat_sync_audit_logs WHERE run_id = ? AND event_type = ?'
         );
 
-        if (!$stmt) {
+        if (! $stmt) {
             $this->logger->error("Failed to prepare count query: {$this->coreConnection->error}");
             return 0;
         }
 
         $stmt->bind_param('ss', $runId, $eventType);
-        if (!$stmt->execute()) {
+        if (! $stmt->execute()) {
             $this->logger->error("Failed to count audit events: {$stmt->error}");
             $stmt->close();
             return 0;
         }
 
         $result = $stmt->get_result();
-        $row = $result->fetch_assoc();
+        $row    = $result->fetch_assoc();
         $stmt->close();
 
-        return (int)($row['cnt'] ?? 0);
+        return (int) ($row['cnt'] ?? 0);
     }
 }

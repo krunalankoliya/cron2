@@ -62,11 +62,23 @@ final class SyncOrchestrator
             $rows = $this->soapService->parseResponse($payload);
 
             if (empty($rows)) {
+                // No <Table> nodes parsed out — could mean a genuinely empty
+                // result set, or ITS rejected the request (bad key, IP not
+                // whitelisted, etc). Log the FULL raw body: the XSD schema
+                // block alone (one <xs:element> per column) can run past
+                // 2000 chars before the actual <diffgr:diffgram> data starts,
+                // so a truncated excerpt can look empty when it isn't.
+                $rawResponse = trim($payload);
+                $this->logger->error(
+                    'Empty payload from SOAP API. Response length: ' . strlen($rawResponse)
+                    . ' bytes. Raw response: ' . $rawResponse
+                );
+
                 $this->auditService->writeEvent(
                     $runId,
                     'no_data',
                     'jamaat_sync',
-                    message: 'Empty payload from SOAP API'
+                    message: 'Empty payload from SOAP API (' . strlen($rawResponse) . ' bytes, see log for full body)'
                 );
                 $this->logRunSummary($runId, 0, 0, 0, 0, $startTime);
                 return;
@@ -133,10 +145,13 @@ final class SyncOrchestrator
 
         // Upsert changed rows
         if (!empty($changedRows)) {
-            $rowsToUpsert = array_filter(
-                $normalizedRows,
-                fn($row) => isset($changedRows[$row['jamaat_id']])
-            );
+            $rowsToUpsert = [];
+            foreach ($normalizedRows as $row) {
+                if (isset($changedRows[$row['jamaat_id']])) {
+                    $row['row_hash'] = $changedRows[$row['jamaat_id']];
+                    $rowsToUpsert[] = $row;
+                }
+            }
 
             // Upsert to all connections
             $connections = ['core', 'fanew', 'araiz', 'imtihaan', 'infra'];

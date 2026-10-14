@@ -1,13 +1,14 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/bootstrap.php';
 
 use Jamaat\Cron\Config\Constants;
 use Jamaat\Cron\Infrastructure\FileLock;
 
-// Determine .env path (should be outside web root, not in tmp)
-$envPath = dirname(__DIR__) . '/.env';
+// Determine .env path
+$envPath = __DIR__ . '/.env';
 
 try {
     // Create DI container
@@ -37,10 +38,17 @@ try {
     $lock->release();
 
     exit(0);
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
+    $message = "Fatal error: {$e->getMessage()} at {$e->getFile()}:{$e->getLine()}";
+
+    // $logger may not exist yet if createContainer() itself failed (e.g.
+    // missing .env, bad DB creds) — always surface the error regardless.
     if (isset($logger)) {
-        $logger->error("Fatal error: {$e->getMessage()} at {$e->getFile()}:{$e->getLine()}");
+        $logger->error($message);
+    } else {
+        error_log("[jamaat-cron] {$message}");
     }
+    @file_put_contents('php://stderr', $message . PHP_EOL);
 
     // Attempt cleanup
     if (isset($connManager)) {
