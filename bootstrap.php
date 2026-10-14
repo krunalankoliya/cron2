@@ -12,6 +12,7 @@ use Jamaat\Cron\Services\AuditService;
 use Jamaat\Cron\Services\DatabaseService;
 use Jamaat\Cron\Services\DiffService;
 use Jamaat\Cron\Services\HashService;
+use Jamaat\Cron\Services\MailService;
 use Jamaat\Cron\Services\RunStateService;
 use Jamaat\Cron\Services\SoapService;
 use Jamaat\Cron\Services\StagingService;
@@ -63,6 +64,7 @@ use Jamaat\Cron\Services\SyncOrchestrator;
         $auditService     = new AuditService($connections['core'], $logger);
         $adminUserService = new AdminUserService($connections, $logger);
         $runStateService  = new RunStateService($connections['core'], $logger);
+        $mailService      = new MailService($env, $logger);
 
         $orchestrator = new SyncOrchestrator(
             $soapService,
@@ -73,6 +75,7 @@ use Jamaat\Cron\Services\SyncOrchestrator;
             $auditService,
             $adminUserService,
             $runStateService,
+            $mailService,
             $logger
         );
 
@@ -89,6 +92,7 @@ use Jamaat\Cron\Services\SyncOrchestrator;
             'auditService'     => $auditService,
             'adminUserService' => $adminUserService,
             'runStateService'  => $runStateService,
+            'mailService'      => $mailService,
             'orchestrator'     => $orchestrator,
         ];
     }
